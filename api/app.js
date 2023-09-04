@@ -1,21 +1,21 @@
-// Require the Bolt package (github.com/slackapi/bolt)
 const { App } = require("@slack/bolt");
-// const keep_alive = require('./keep_alive.js');
 const addQuotes = require('./quotes.js');
 const schedule = require('node-schedule');
 const moment = require('moment');
-const token = process.env.SLACK_BOT_TOKEN;
-const channel = "CDJMS683D";
 const Airtable = require('airtable');
+require('dotenv').config();
+
 Airtable.configure({
 	endpointUrl: 'https://api.airtable.com',
 	apiKey: process.env.AIRTABLE_API_KEY
 });
-const base = Airtable.base('appogmRaVRo5ElVH7');
-let speedArr = [];
-let latest;
+const base = Airtable.base(process.env.AIRTABLE_BASE_ID);
 
-const goalDate = '10/31/2023';
+const token = process.env.SLACK_BOT_TOKEN;
+const channel = process.env.SLACK_MILLION_CHANNEL;
+const port = process.env.PORT ?? 3000;
+
+const goalDate = '12/31/2023';
 const goalNumber = 300000;
 
 const app = new App({
@@ -78,7 +78,7 @@ async function fetchOldest(id) {
 
 async function publishMessage(id, text) {
 	try {
-		const result = await app.client.chat.postMessage({
+		await app.client.chat.postMessage({
 			token: token,
 			channel: id,
 			text: text
@@ -90,7 +90,7 @@ async function publishMessage(id, text) {
 
 async function postReaction(id, emoji, ts) {
 	try {
-		const result = await app.client.reactions.add({
+		await app.client.reactions.add({
 			token: token,
 			channel: id,
 			name: emoji,
@@ -103,7 +103,7 @@ async function postReaction(id, emoji, ts) {
 
 async function pinMessage(id, ts) {
 	try {
-		const result = await app.client.pins.add({
+		await app.client.pins.add({
 			token: token,
 			channel: id,
 			timestamp: ts
@@ -113,21 +113,12 @@ async function pinMessage(id, ts) {
 	}
 }
 
-function findMean(arr) {
-	let totalSum = 0;
-	for (let i of arr) {
-		totalSum += i;
-	}
-	return totalSum / arr.length;
-}
-
 async function addData(db, object) {
 	base(db).create(object, function(err, record) {
 		if (err) {
 			console.error(err);
 			return;
 		}
-		// console.log(record.getId());
 	})
 }
 
@@ -143,30 +134,24 @@ async function getAverage() {
 		let sum = 0;
 		obj.forEach((item) => (sum += item.fields.increase));
 
-		return sum / 30;
+		return sum / obj.length;
 	} catch (error) {
 		console.error(error);
 	}
 }
 
 async function report() {
+	console.log("Writing daily report...");
 	let oldest = await fetchOldest(channel);
 	let latest = await fetchLatest(channel);
 	let diff = latest - oldest;
 	addData('increase', {
 		"Date": moment().subtract(1, "days").format("YYYY-MM-DD"),
 		"increase": diff,
-		"stats": [
-			"rec2XI8QAsPr7EMVB"
-		],
 		"start": oldest,
 	})
 	let averageSpeed = await getAverage();
-	let thousandsGoal = Math.ceil(latest / 1000) * 1000;
-	let thousandsTime = predictTime(thousandsGoal, latest, averageSpeed);
-	// let tenThousandsGoal = Math.ceil(latest / 5000) * 5000;
 	let pastThousandsGoal = Math.floor(latest / 1000) * 1000;
-	// let tenThousandsTime = predictTime(tenThousandsGoal, latest, averageSpeed);
 	let goals = predictSpeed(goalDate, goalNumber, latest);
 	let message =
 		`Today we've went from *${oldest}* to *${latest}*!
@@ -178,19 +163,12 @@ async function report() {
 	if (pastThousandsGoal > oldest && pastThousandsGoal <= latest) {
 		let messageWithCelebration = `:tada: Congratulations! We've went past ${pastThousandsGoal}! :tada: \n` + message;
 		publishMessage(channel, addQuotes(messageWithCelebration, goals, averageSpeed));
-		// publishMessage('C017W4PHYKS', addQuotes(messageWithCelebration, goals, averageSpeed));
 	} else {
 		publishMessage(channel, addQuotes(message, goals, averageSpeed));
-		// publishMessage('C017W4PHYKS', addQuotes(message, goals, averageSpeed));
 	}
 
+	console.log("Sent daily report.");
 };
-
-function predictTime(goal, recent, averageSpeed) {
-	let daysLeft = (goal - recent) / averageSpeed;
-	let unix = new Date(Date.now() + daysLeft * 86400000);
-	return moment(unix).fromNow();
-}
 
 function predictSpeed(goalDate, goalNumber, currentNumber) {
 	let today = new Date();
@@ -205,7 +183,6 @@ function predictSpeed(goalDate, goalNumber, currentNumber) {
 app.event('message', async (body) => {
 	try {
 		let e = body.event;
-		console.log(e);
 		if (typeof e.subtype === "undefined" && /\d/.test(e.text[0])) {
 			let number = extractNumber(e.text);
 			let ts = e.ts;
@@ -216,7 +193,6 @@ app.event('message', async (body) => {
 			if (number % 5000 === 0) {
 				pinMessage(c, ts);
 			}
-			let l = number.length;
 			if (number.slice(-2) === '69') {
 				postReaction(c, "ok_hand", ts);
 			}
@@ -244,20 +220,21 @@ app.event('app_mention', async (body) => {
 			"What is it? Are you going too slow that you need another supernatural being to help you _speed-count_? If so, you've found the wrong one, because this supernatural being is _trying to sleep!_",
 			"HISSSSSSSSSSS!",
 			"Minions, I had _three hours_ of sleep yesterday, and I am trying to catch up. Please, _leave me alone to sleep._",
-		]
+		];
 		
-		publishMessage(c, messageArray[choose])
+		publishMessage(c, messageArray[choose]);
+
+		console.log("App mentioned.");
 	} catch (err) {
 		console.error(err)
 	}
 });
 
-(async (req, res) => {
-	// Start your app
+(async () => {
 	try {
-		await app.start(process.env.PORT || 3000);
-		let j = schedule.scheduleJob('0 0 * * *', report);
-		// let j = schedule.scheduleJob('*/15 * * * * *', report);
+		await app.start(port);
+		schedule.scheduleJob('0 0 * * *', report);
+		console.log(`Started bot, listening on port ${port}`)
 	} catch (error) {
 		console.error(error);
 	}

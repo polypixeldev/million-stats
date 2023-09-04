@@ -22,7 +22,7 @@ let regularEndQuotes = [
 
 function addQuotes(message, rawGoals, rawSpeed) {
 	let start = regularStartQuotes[Math.floor(Math.random() * regularStartQuotes.length)]
-	let end;
+	let end =regularEndQuotes[Math.floor(Math.random() * regularEndQuotes.length)];
 	let goals = Math.ceil(rawGoals[1]);
 	let days = rawGoals[0];
 	let speed = Math.round(rawSpeed);
@@ -36,7 +36,6 @@ function addQuotes(message, rawGoals, rawSpeed) {
 	} else if (diff > 1000) {
 		end = `You're slogging behind, my minions! Only *${speed}* a day? RiDONKulous! Get that speed up to at least *+${goals}* to get there on time! Hurry up!!! You have *${days}* days left to get there!`
 	}
-	// let end = regularEndQuotes[Math.floor(Math.random() * regularEndQuotes.length)]
 	return start + "\n" + message + "\n" + end;
 }
 
